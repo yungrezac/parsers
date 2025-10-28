@@ -1,77 +1,136 @@
+// main.js
 // --- Глобальные переменные ---
 let parsedData = []; // Всегда храним массив продуктов
 let resultsChartInstance = null;
 
-// *** ВАЖНО: URL ТВОЕГО БЭКЕНДА ***
-// Когда у тебя будет бэкенд, замени это на его URL
-// Пример для локального теста: "http://127.0.0.1:5000"
-const API_BASE_URL = "https://cerulean-heliotrope-6d46ff.netlify.app"; 
-
-// --- Мок-данные (Симуляция ответа сервера) ---
-// (Используются, если настоящий API_BASE_URL не отвечает)
-
-const MOCK_PRODUCT_1 = {
-    id: 12345678, name: "Увлажняющий крем 'Aqua-Boost'", brand: "BeautyNature", price: 1250.00, rating: 4.8, reviews: 1890, stock: 450,
-    params: { "Назначение": "Увлажнение", "Тип кожи": "Сухая", "Объем": "50 мл" }
-};
-const MOCK_PRODUCT_2 = {
-    id: 87654321, name: "Сыворотка с Витамином C", brand: "GlowUp", price: 2100.00, rating: 4.9, reviews: 5120, stock: 150,
-    params: { "Назначение": "Сияние", "Актив": "Витамин C", "Объем": "30 мл" }
-};
-const MOCK_PRODUCT_3 = {
-    id: 11223344, name: "Маска для лица глиняная", brand: "PureSkin", price: 850.00, rating: 4.6, reviews: 950, stock: 300,
-    params: { "Назначение": "Очищение", "Тип кожи": "Жирная", "Объем": "100 мл" }
-};
-const MOCK_MASS_PRODUCTS = [MOCK_PRODUCT_1, MOCK_PRODUCT_2, MOCK_PRODUCT_3];
-
-// --- API ЗАПРОСЫ (с фолбэком на симуляцию) ---
-
-// Парсинг 1 товара
-async function fetchSingleProduct(articleId) {
-    if (!articleId) throw new Error("Артикул не может быть пустым.");
-    
-    try {
-        // *** НАСТОЯЩИЙ КОД: ***
-        const response = await fetch(`${API_BASE_URL}/parse-single?article=${articleId}`);
-        if (!response.ok) throw new Error(`Ошибка сети: ${response.statusText}`);
-        return await response.json();
-    } catch (e) {
-        console.warn(`Ошибка API (fetchSingleProduct), используем симуляцию. Ошибка: ${e.message}`);
-        // *** СИМУЛЯЦИЯ (Фолбэк): ***
-        return new Promise(resolve => {
-            setTimeout(() => resolve({ ...MOCK_PRODUCT_1, id: articleId }), 1000);
-        });
+// --- Вспомогательная функция для fetch через Netlify proxy ---
+async function fetchJson(url) {
+    // Удаляем 'https://' из url и используем /api/ для прокси
+    const proxyPath = '/api/' + url.replace('https://', '');
+    const response = await fetch(proxyPath);
+    if (!response.ok) {
+        throw new Error('Ошибка сети: ' + response.status);
     }
+    return await response.json();
 }
 
-// Массовый парсинг
+// --- Парсинг по поиску ---
+async function fetchSearchProducts(query) {
+    if (!query) throw new Error("Название не может быть пустым.");
+    
+    const allProducts = [];
+    let page = 1;
+    const maxPages = 10; // Ограничение для скорости
+    
+    while (true) {
+        const url = `https://search.wb.ru/exactmatch/ru/common/v5/search?ab_testing=false&appType=1&curr=rub&dest=-1257786&query=${encodeURIComponent(query)}&resultset=catalog&sort=popular&spp=30&suppressSpellcheck=false&page=${page}`;
+        let data;
+        try {
+            data = await fetchJson(url);
+        } catch (e) {
+            throw new Error('Ошибка сети: ' + e.message);
+        }
+        
+        if (!data.data || !data.data.products || data.data.products.length === 0) break;
+        
+        data.data.products.forEach(p => {
+            let stock = 0;
+            if (p.sizes) {
+                p.sizes.forEach(s => {
+                    if (s.stocks) {
+                        s.stocks.forEach(st => stock += st.qty || 0);
+                    } else {
+                        stock += s.qty || 0;
+                    }
+                });
+            }
+            
+            allProducts.push({
+                id: p.id,
+                name: p.name,
+                brand: p.brand,
+                price: p.salePriceU / 100,
+                rating: p.reviewRating || 0,
+                reviews: p.feedbacks || 0,
+                stock: stock,
+                params: {}  // Параметры не загружаются для поиска
+            });
+        });
+        
+        if (page >= maxPages || allProducts.length >= (data.data.total || allProducts.length)) break;
+        page++;
+        await new Promise(resolve => setTimeout(resolve, 500)); // Задержка
+    }
+    
+    return allProducts;
+}
+
+// --- Массовый парсинг ---
 async function fetchMassProducts(sellerId, brandId) {
     if (!sellerId && !brandId) throw new Error("Нужно указать ID Магазина или ID Бренда.");
+    if (sellerId && brandId) throw new Error("Укажите только один: ID Магазина или ID Бренда.");
     
-    try {
-        // *** НАСТОЯЩИЙ КОД: ***
-        const response = await fetch(`${API_BASE_URL}/parse-mass?seller=${sellerId}&brand=${brandId}`);
-        if (!response.ok) throw new Error(`Ошибка сети: ${response.statusText}`);
-        return await response.json();
-    } catch (e) {
-        console.warn(`Ошибка API (fetchMassProducts), используем симуляцию. Ошибка: ${e.message}`);
-        // *** СИМУЛЯЦИЯ (Фолбэк): ***
-        return new Promise(resolve => {
-            setTimeout(() => resolve(MOCK_MASS_PRODUCTS), 1500);
-        });
+    let endpoint = '';
+    if (sellerId) {
+        endpoint = `https://catalog.wb.ru/sellers/v4/catalog?appType=1&curr=rub&dest=-1257786&sort=popular&spp=30&supplier=${sellerId}`;
+    } else if (brandId) {
+        endpoint = `https://catalog.wb.ru/brands/v2/catalog?appType=1&curr=rub&dest=-1257786&sort=popular&spp=30&brand=${brandId}`;
     }
+    
+    const allProducts = [];
+    let page = 1;
+    const maxPages = 10; // Ограничение для скорости
+    
+    while (true) {
+        const url = `${endpoint}&page=${page}`;
+        let data;
+        try {
+            data = await fetchJson(url);
+        } catch (e) {
+            throw new Error('Ошибка сети: ' + e.message);
+        }
+        
+        if (!data.data || !data.data.products || data.data.products.length === 0) break;
+        
+        data.data.products.forEach(p => {
+            let stock = 0;
+            if (p.sizes) {
+                p.sizes.forEach(s => {
+                    if (s.stocks) {
+                        s.stocks.forEach(st => stock += st.qty || 0);
+                    } else {
+                        stock += s.qty || 0;
+                    }
+                });
+            }
+            
+            allProducts.push({
+                id: p.id,
+                name: p.name,
+                brand: p.brand,
+                price: p.salePriceU / 100,
+                rating: p.reviewRating || p.rating || 0,
+                reviews: p.feedbacks || p.feedbackCount || 0,
+                stock: stock,
+                params: {}  // Параметры не загружаются для массового парсинга
+            });
+        });
+        
+        if (page >= maxPages || allProducts.length >= (data.data.total || allProducts.length)) break;
+        page++;
+        await new Promise(resolve => setTimeout(resolve, 500)); // Задержка
+    }
+    
+    return allProducts;
 }
 
 // --- Инициализация приложения ---
-// Ждем, пока весь DOM-контент загрузится
 document.addEventListener('DOMContentLoaded', () => {
     // Инициализация TWA
     try {
-        if (window.Telegram && window.Telegram.WebApp) {
-            window.Telegram.WebApp.ready();
-            window.Telegram.WebApp.expand();
-        }
-    } catch (e) { console.error("Ошибка инициализации TWA:", e); }
+        Telegram.WebApp.ready();
+        Telegram.WebApp.expand();
+    } catch (e) { console.error("Ошибка TWA:", e); }
 
     // Элементы DOM
     const tabSingle = document.getElementById('tab-single');
@@ -89,73 +148,63 @@ document.addEventListener('DOMContentLoaded', () => {
     const tableBody = document.getElementById('results-table-body');
 
     // --- Логика вкладок ---
-    if(tabSingle) {
-        tabSingle.addEventListener('click', () => {
-            tabSingle.classList.add('active');
-            tabMass.classList.remove('active');
-            panelSingle.classList.remove('hidden');
-            panelMass.classList.add('hidden');
-        });
-    }
+    tabSingle.addEventListener('click', () => {
+        tabSingle.classList.add('active');
+        tabMass.classList.remove('active');
+        panelSingle.classList.remove('hidden');
+        panelMass.classList.add('hidden');
+    });
 
-    if(tabMass) {
-        tabMass.addEventListener('click', () => {
-            tabMass.classList.add('active');
-            tabSingle.classList.remove('active');
-            panelMass.classList.remove('hidden');
-            panelSingle.classList.add('hidden');
-        });
-    }
+    tabMass.addEventListener('click', () => {
+        tabMass.classList.add('active');
+        tabSingle.classList.remove('active');
+        panelMass.classList.remove('hidden');
+        panelSingle.classList.add('hidden');
+    });
 
     // --- Логика парсинга ---
     
-    // Парсинг 1 товара
-    if(parseSingleBtn) {
-        parseSingleBtn.addEventListener('click', async () => {
-            const articleId = document.getElementById('article').value;
-            clearUI();
-            setLoading(true, parseSingleBtn);
-            
-            try {
-                const data = await fetchSingleProduct(articleId);
-                parsedData = [data]; // Сохраняем как массив
-                displayResults(parsedData);
-                updateChart(parsedData);
-            } catch (error) {
-                showError(error.message);
-            } finally {
-                setLoading(false, parseSingleBtn, "Спарсить товар");
-            }
-        });
-    }
+    // Парсинг по поиску
+    parseSingleBtn.addEventListener('click', async () => {
+        const query = document.getElementById('search-query').value.trim();
+        clearUI();
+        setLoading(true, parseSingleBtn);
+        
+        try {
+            const data = await fetchSearchProducts(query);
+            parsedData = data;
+            displayResults(parsedData);
+            updateChart(parsedData);
+        } catch (error) {
+            showError(error.message);
+        } finally {
+            setLoading(false, parseSingleBtn, "Спарсить товары");
+        }
+    });
 
     // Массовый парсинг
-    if(parseMassBtn) {
-        parseMassBtn.addEventListener('click', async () => {
-            const sellerId = document.getElementById('seller-id').value;
-            const brandId = document.getElementById('brand-id').value;
-            clearUI();
-            setLoading(true, parseMassBtn);
-            
-            try {
-                const data = await fetchMassProducts(sellerId, brandId);
-                parsedData = data; // Сохраняем массив
-                displayResults(parsedData);
-                updateChart(parsedData);
-            } catch (error) {
-                showError(error.message);
-            } finally {
-                setLoading(false, parseMassBtn, "Спарсить все товары");
-            }
-        });
-    }
+    parseMassBtn.addEventListener('click', async () => {
+        const sellerId = document.getElementById('seller-id').value.trim();
+        const brandId = document.getElementById('brand-id').value.trim();
+        clearUI();
+        setLoading(true, parseMassBtn);
+        
+        try {
+            const data = await fetchMassProducts(sellerId, brandId);
+            parsedData = data;
+            displayResults(parsedData);
+            updateChart(parsedData);
+        } catch (error) {
+            showError(error.message);
+        } finally {
+            setLoading(false, parseMassBtn, "Спарсить все товары");
+        }
+    });
     
     // --- Логика отображения ---
 
     function displayResults(products) {
-        if (!tableBody) return;
         tableBody.innerHTML = ''; // Очистка
-        
         if (!products || products.length === 0) {
             showError("Ничего не найдено.");
             return;
@@ -166,25 +215,23 @@ document.addEventListener('DOMContentLoaded', () => {
             tr.className = "border-b";
             tr.style.borderColor = "var(--tg-bg)";
             tr.innerHTML = `
-                <td class="py-3 px-4">${p.id || 'N/A'}</td>
-                <td class="py-3 px-4 font-medium">${p.name || 'N/A'}</td>
-                <td class="py-3 px-4">${p.brand || 'N/A'}</td>
-                <td class="py-3 px-4">${p.price || 0} ₽</td>
-                <td class="py-3 px-4">${p.rating || 0}</td>
-                <td class="py-3 px-4">${p.reviews || 0}</td>
-                <td class="py-3 px-4">${p.stock || 0}</td>
+                <td class="py-3 px-4">${p.id}</td>
+                <td class="py-3 px-4 font-medium">${p.name}</td>
+                <td class="py-3 px-4">${p.brand}</td>
+                <td class="py-3 px-4">${p.price} ₽</td>
+                <td class="py-3 px-4">${p.rating}</td>
+                <td class="py-3 px-4">${p.reviews}</td>
+                <td class="py-3 px-4">${p.stock}</td>
             `;
             tableBody.appendChild(tr);
         });
         
-        if (resultsContainer) resultsContainer.classList.remove('hidden');
+        resultsContainer.classList.remove('hidden');
     }
 
     // --- "Умная" диаграмма ---
     function updateChart(products) {
-        const ctx = document.getElementById('resultsChart')?.getContext('2d');
-        if (!ctx) return;
-        
+        const ctx = document.getElementById('resultsChart').getContext('2d');
         if (resultsChartInstance) {
             resultsChartInstance.destroy();
         }
@@ -197,7 +244,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 data: {
                     labels: ['Цена (₽)', 'Отзывы (шт)', 'Остаток (шт)'],
                     datasets: [{
-                        label: `Аналитика: ${String(p.name || 'Товар').substring(0, 20)}...`,
+                        label: `Аналитика: ${p.name.substring(0, 20)}...`,
                         data: [p.price, p.reviews, p.stock],
                         backgroundColor: ['#5288C1', '#76C7C0', '#F3BA2F'],
                     }]
@@ -229,16 +276,16 @@ document.addEventListener('DOMContentLoaded', () => {
     function chartOptions(scales = {}) {
         return {
             responsive: true,
-            plugins: { legend: { labels: { color: 'var(--tg-text, #FFF)' } } },
+            plugins: { legend: { labels: { color: 'var(--tg-text)' } } },
             scales: {
                 y: { 
                     beginAtZero: true,
-                    ticks: { color: 'var(--tg-hint, #AAA)' },
-                    grid: { color: 'var(--tg-secondary-bg, #333)' },
+                    ticks: { color: 'var(--tg-hint)' },
+                    grid: { color: 'var(--tg-secondary-bg)' },
                     ...scales.y
                 },
                 x: { 
-                    ticks: { color: 'var(--tg-hint, #AAA)' },
+                    ticks: { color: 'var(--tg-hint)' },
                     grid: { display: false },
                     ...scales.x
                 }
@@ -247,52 +294,46 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // --- Экспорт в Excel ---
-    if (exportBtn) {
-        exportBtn.addEventListener('click', () => {
-            if (parsedData.length === 0) return;
+    exportBtn.addEventListener('click', () => {
+        if (parsedData.length === 0) return;
 
-            // Собираем все *уникальные* параметры (для косметики) со всех товаров
-            const allParamKeys = new Set();
-            parsedData.forEach(p => {
-                if (p.params) Object.keys(p.params).forEach(k => allParamKeys.add(k));
-            });
-            const paramKeysArray = Array.from(allParamKeys);
-            
-            // Преобразуем данные в плоский формат
-            const flatData = parsedData.map(p => {
-                const base = {
-                    "Артикул": p.id,
-                    "Название": p.name,
-                    "Бренд": p.brand,
-                    "Цена": p.price,
-                    "Рейтинг": p.rating,
-                    "Отзывы": p.reviews,
-                    "Остаток": p.stock,
-                };
-                
-                // Добавляем колонки для *каждого* уникального параметра
-                paramKeysArray.forEach(key => {
-                    base[key] = p.params ? (p.params[key] || "") : "";
-                });
-                
-                return base;
-            });
-            
-            if (window.XLSX) {
-                const ws = window.XLSX.utils.json_to_sheet(flatData);
-                const wb = window.XLSX.utils.book_new();
-                window.XLSX.utils.book_append_sheet(wb, ws, "ParsedProducts");
-                window.XLSX.writeFile(wb, `wb_export_${Date.now()}.xlsx`);
-            } else {
-                console.error("Библиотека XLSX (SheetJS) не найдена.");
-                showError("Ошибка: Не удалось загрузить библиотеку для Excel.");
-            }
+        // Собираем все *уникальные* параметры (для косметики) со всех товаров
+        const allParamKeys = new Set();
+        parsedData.forEach(p => {
+            if (p.params) Object.keys(p.params).forEach(k => allParamKeys.add(k));
         });
-    }
+        const paramKeysArray = Array.from(allParamKeys);
+        
+        // Преобразуем данные в плоский формат
+        const flatData = parsedData.map(p => {
+            const base = {
+                "Артикул": p.id,
+                "Название": p.name,
+                "Бренд": p.brand,
+                "Цена": p.price,
+                "Рейтинг": p.rating,
+                "Отзывы": p.reviews,
+                "Остаток": p.stock,
+            };
+            
+            // Добавляем колонки для *каждого* уникального параметра
+            paramKeysArray.forEach(key => {
+                base[key] = p.params ? (p.params[key] || "") : "";
+            });
+            
+            return base;
+        });
+        
+        const ws = XLSX.utils.json_to_sheet(flatData);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "ParsedProducts");
+        XLSX.writeFile(wb, `wb_export_${Date.now()}.xlsx`);
+    });
 
     // --- Вспомогательные функции UI ---
     function setLoading(isLoading, btnElement, btnText = "") {
-        if (loadingEl) loadingEl.classList.toggle('hidden', !isLoading);
+        loadingEl.classList.toggle('hidden', !isLoading);
+        loadingEl.classList.toggle('flex', isLoading);
         if (btnElement) {
             btnElement.disabled = isLoading;
             if (isLoading) {
@@ -304,16 +345,14 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     function showError(message) {
-        if (errorEl) {
-            errorEl.textContent = `Ошибка: ${message}`;
-            errorEl.classList.remove('hidden');
-        }
+        errorEl.textContent = `Ошибка: ${message}`;
+        errorEl.classList.remove('hidden');
     }
     
     function clearUI() {
-        if (errorEl) errorEl.classList.add('hidden');
-        if (resultsContainer) resultsContainer.classList.add('hidden');
-        if (tableBody) tableBody.innerHTML = '';
+        errorEl.classList.add('hidden');
+        resultsContainer.classList.add('hidden');
+        tableBody.innerHTML = '';
         parsedData = [];
         if (resultsChartInstance) resultsChartInstance.destroy();
     }

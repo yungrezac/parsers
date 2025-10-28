@@ -1,24 +1,14 @@
-<!-- index.html -->
 <!DOCTYPE html>
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>WB Parser</title>
-    <!-- 1. Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    
-    <!-- 2. Telegram Web App Script -->
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
-    
-    <!-- 3. SheetJS (xlsx) для Excel -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-    
-    <!-- 4. Chart.js для диаграмм -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    
     <style>
-        /* Используем переменные темы Telegram */
         :root {
             --tg-bg: var(--tg-theme-bg-color, #181E25);
             --tg-text: var(--tg-theme-text-color, #FFFFFF);
@@ -27,148 +17,83 @@
             --tg-button: var(--tg-theme-button-color, #5288C1);
             --tg-button-text: var(--tg-theme-button-text-color, #FFFFFF);
         }
-        body {
-            background-color: var(--tg-bg);
-            color: var(--tg-text);
-            font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-        }
-        .card {
-            background-color: var(--tg-secondary-bg);
-            border-radius: 12px;
-        }
-        .btn-primary {
-            background-color: var(--tg-button);
-            color: var(--tg-button-text);
-            border-radius: 8px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: opacity 0.2s;
-        }
+        body { background-color: var(--tg-bg); color: var(--tg-text); font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+        .card { background-color: var(--tg-secondary-bg); border-radius: 12px; }
+        .btn-primary { background-color: var(--tg-button); color: var(--tg-button-text); border-radius: 8px; font-weight: 600; cursor: pointer; transition: opacity 0.2s; }
         .btn-primary:hover { opacity: 0.85; }
-        .btn-primary:disabled {
-            background-color: var(--tg-hint);
-            opacity: 0.7;
-            cursor: not-allowed;
-        }
-        .btn-secondary {
-            background-color: var(--tg-secondary-bg);
-            color: var(--tg-text);
-            border: 1px solid var(--tg-hint);
-        }
-        .input-field {
-            background-color: var(--tg-bg);
-            color: var(--tg-text);
-            border: 1px solid var(--tg-hint);
-            border-radius: 8px;
-        }
+        .btn-primary:disabled { background-color: var(--tg-hint); opacity: 0.7; cursor: not-allowed; }
+        .btn-secondary { background-color: var(--tg-secondary-bg); color: var(--tg-text); border: 1px solid var(--tg-hint); }
+        .input-field { background-color: var(--tg-bg); color: var(--tg-text); border: 1px solid var(--tg-hint); border-radius: 8px; }
         .input-field::placeholder { color: var(--tg-hint); }
-        .tab {
-            border-bottom: 3px solid transparent;
-            color: var(--tg-hint);
-        }
-        .tab.active {
-            border-bottom-color: var(--tg-button);
-            color: var(--tg-text);
-        }
-        .loader {
-            border: 4px solid var(--tg-hint);
-            border-top: 4px solid var(--tg-button);
-            border-radius: 50%;
-            width: 24px;
-            height: 24px;
-            animation: spin 1s linear infinite;
-        }
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
+        .tab { border-bottom: 3px solid transparent; color: var(--tg-hint); }
+        .tab.active { border-bottom-color: var(--tg-button); color: var(--tg-text); }
+        .loader { border: 4px solid var(--tg-hint); border-top: 4px solid var(--tg-button); border-radius: 50%; width: 24px; height: 24px; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
     </style>
 </head>
 <body class="p-4">
-
     <div class="max-w-4xl mx-auto space-y-6">
         <h1 class="text-2xl font-bold text-center">Парсер косметики WB</h1>
 
-        <!-- Блок 1: Вкладки выбора режима -->
+        <!-- Вкладки -->
         <div class="card p-2">
             <div class="flex border-b" style="border-color: var(--tg-hint);">
                 <button id="tab-single" class="tab active w-1/2 py-3 px-4 font-semibold">Поиск по названию</button>
                 <button id="tab-mass" class="tab w-1/2 py-3 px-4 font-semibold">Массовый парсинг</button>
             </div>
             
-            <!-- Форма: Поиск по названию -->
+            <!-- Поиск -->
             <div id="panel-single" class="p-4 space-y-4">
-                <p class="text-sm" style="color: var(--tg-hint);">Введите название товара для поиска и парсинга всех найденных товаров. Если товаров много, парсинг может занять время. Ограничиваем 10 страницами для скорости.</p>
-                <div>
-                    <label for="search-query" class="block text-sm font-medium mb-1">Название:</label>
-                    <input type="text" id="search-query" class="w-full p-2 input-field" placeholder="Например, увлажняющий крем">
-                </div>
+                <p class="text-sm" style="color: var(--tg-hint);">Введите название товара. Ограничение: 10 страниц.</p>
+                <input type="text" id="search-query" class="w-full p-2 input-field" placeholder="Например, увлажняющий крем">
                 <button id="parse-single-btn" class="w-full p-3 btn-primary h-12 flex items-center justify-center">
                     <span>Спарсить товары</span>
                 </button>
             </div>
             
-            <!-- Форма: Массовый парсинг -->
+            <!-- Массовый -->
             <div id="panel-mass" class="p-4 space-y-4 hidden">
-                 <p class="text-sm" style="color: var(--tg-hint);">Введите ID магазина или ID бренда. Массовый парсинг может занять время, если товаров много. Параметры товаров не будут загружены для ускорения. Ограничиваем 10 страницами для скорости.</p>
-                <div>
-                    <label for="seller-id" class="block text-sm font-medium mb-1">ID Магазина:</label>
-                    <input type="text" id="seller-id" class="w-full p-2 input-field" placeholder="ID продавца">
-                </div>
-                <div>
-                    <label for="brand-id" class="block text-sm font-medium mb-1">ID Бренда:</label>
-                    <input type="text" id="brand-id" class="w-full p-2 input-field" placeholder="ID бренда">
-                </div>
+                <p class="text-sm" style="color: var(--tg-hint);">ID Магазина или ID Бренда. Ограничение: 10 страниц.</p>
+                <input type="text" id="seller-id" class="w-full p-2 input-field" placeholder="ID продавца">
+                <input type="text" id="brand-id" class="w-full p-2 input-field mt-2" placeholder="ID бренда">
                 <button id="parse-mass-btn" class="w-full p-3 btn-primary h-12 flex items-center justify-center">
                     <span>Спарсить все товары</span>
                 </button>
             </div>
         </div>
 
-        <!-- Спиннер / Ошибка -->
+        <!-- Загрузка / Ошибка -->
         <div id="loading" class="flex flex-col items-center justify-center hidden">
             <div class="loader"></div>
-            <p class="mt-2 text-sm" style="color: var(--tg-hint);">Парсинг... Это займет время.</p>
+            <p class="mt-2 text-sm" style="color: var(--tg-hint);">Парсинг... Это займёт время.</p>
         </div>
         <div id="error-msg" class="text-sm text-red-400 text-center hidden p-4 card"></div>
 
-
-        <!-- Блок 2: Результаты парсинга -->
+        <!-- Результаты -->
         <div id="results-container" class="space-y-4 hidden">
             <h2 class="text-xl font-semibold text-center">Результаты парсинга</h2>
-            
-            <!-- Кнопка выгрузки -->
-            <button id="export-btn" class="w-full p-3 btn-primary btn-secondary">
-                Выгрузить в Excel
-            </button>
-
-            <!-- Таблица с данными ("Колонки") -->
+            <button id="export-btn" class="w-full p-3 btn-primary btn-secondary">Выгрузить в Excel</button>
             <div class="card p-0 overflow-x-auto">
                 <table class="w-full text-sm text-left">
                     <thead class="text-xs uppercase" style="background-color: var(--tg-bg);">
                         <tr>
-                            <th scope="col" class="py-3 px-4">Артикул</th>
-                            <th scope="col" class="py-3 px-4">Название</th>
-                            <th scope="col" class="py-3 px-4">Бренд</th>
-                            <th scope="col" class="py-3 px-4">Цена</th>
-                            <th scope="col" class="py-3 px-4">Рейтинг</th>
-                            <th scope="col" class="py-3 px-4">Отзывы</th>
-                            <th scope="col" class="py-3 px-4">Остаток</th>
+                            <th class="py-3 px-4">Артикул</th>
+                            <th class="py-3 px-4">Название</th>
+                            <th class="py-3 px-4">Бренд</th>
+                            <th class="py-3 px-4">Цена</th>
+                            <th class="py-3 px-4">Рейтинг</th>
+                            <th class="py-3 px-4">Отзывы</th>
+                            <th class="py-3 px-4">Остаток</th>
                         </tr>
                     </thead>
-                    <tbody id="results-table-body" class="divide-y" style="border-color: var(--tg-bg);">
-                        <!-- Данные будут вставлены сюда -->
-                    </tbody>
+                    <tbody id="results-table-body"></tbody>
                 </table>
             </div>
-
-            <!-- Диаграмма -->
             <div class="card p-4">
-                 <h3 class="text-lg font-semibold mb-2 text-center">Диаграмма</h3>
-                 <canvas id="resultsChart"></canvas>
+                <h3 class="text-lg font-semibold mb-2 text-center">Диаграмма</h3>
+                <canvas id="resultsChart"></canvas>
             </div>
         </div>
-
     </div>
 
     <script src="main.js"></script>

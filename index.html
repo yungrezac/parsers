@@ -45,6 +45,7 @@
             <!-- Поиск -->
             <div id="panel-single" class="p-4 space-y-4">
                 <p class="text-sm" style="color: var(--tg-hint);">Введите название товара. Ограничение: 10 страниц.</p>
+                <label for="search-query" class="block text-sm font-medium mb-1">Название:</label>
                 <input type="text" id="search-query" class="w-full p-2 input-field" placeholder="Например, увлажняющий крем">
                 <button id="parse-single-btn" class="w-full p-3 btn-primary h-12 flex items-center justify-center">
                     <span>Спарсить товары</span>
@@ -53,9 +54,11 @@
             
             <!-- Массовый -->
             <div id="panel-mass" class="p-4 space-y-4 hidden">
-                <p class="text-sm" style="color: var(--tg-hint);">ID Магазина или ID Бренда. Ограничение: 10 страниц.</p>
+                <p class="text-sm" style="color: var(--tg-hint);">Введите ID магазина или ID бренда. Ограничение: 10 страниц.</p>
+                <label for="seller-id" class="block text-sm font-medium mb-1">ID Магазина:</label>
                 <input type="text" id="seller-id" class="w-full p-2 input-field" placeholder="ID продавца">
-                <input type="text" id="brand-id" class="w-full p-2 input-field mt-2" placeholder="ID бренда">
+                <label for="brand-id" class="block text-sm font-medium mb-1">ID Бренда:</label>
+                <input type="text" id="brand-id" class="w-full p-2 input-field" placeholder="ID бренда">
                 <button id="parse-mass-btn" class="w-full p-3 btn-primary h-12 flex items-center justify-center">
                     <span>Спарсить все товары</span>
                 </button>
@@ -65,7 +68,7 @@
         <!-- Загрузка / Ошибка -->
         <div id="loading" class="flex flex-col items-center justify-center hidden">
             <div class="loader"></div>
-            <p class="mt-2 text-sm" style="color: var(--tg-hint);">Парсинг... Это займёт время.</p>
+            <p class="mt-2 text-sm" style="color: var(--tg-hint);">Парсинг... Это займет время.</p>
         </div>
         <div id="error-msg" class="text-sm text-red-400 text-center hidden p-4 card"></div>
 
@@ -86,7 +89,7 @@
                             <th class="py-3 px-4">Остаток</th>
                         </tr>
                     </thead>
-                    <tbody id="results-table-body"></tbody>
+                    <tbody id="results-table-body" class="divide-y" style="border-color: var(--tg-bg);"></tbody>
                 </table>
             </div>
             <div class="card p-4">

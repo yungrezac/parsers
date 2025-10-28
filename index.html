@@ -4,11 +4,20 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>WB Parser</title>
+    <!-- 1. Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- 2. Telegram Web App Script -->
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    
+    <!-- 3. SheetJS (xlsx) для Excel -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    
+    <!-- 4. Chart.js для диаграмм -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
     <style>
+        /* Используем переменные темы Telegram */
         :root {
             --tg-bg: var(--tg-theme-bg-color, #181E25);
             --tg-text: var(--tg-theme-text-color, #FFFFFF);
@@ -17,88 +26,481 @@
             --tg-button: var(--tg-theme-button-color, #5288C1);
             --tg-button-text: var(--tg-theme-button-text-color, #FFFFFF);
         }
-        body { background-color: var(--tg-bg); color: var(--tg-text); font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
-        .card { background-color: var(--tg-secondary-bg); border-radius: 12px; }
-        .btn-primary { background-color: var(--tg-button); color: var(--tg-button-text); border-radius: 8px; font-weight: 600; cursor: pointer; transition: opacity 0.2s; }
+        body {
+            background-color: var(--tg-bg);
+            color: var(--tg-text);
+            font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+        .card {
+            background-color: var(--tg-secondary-bg);
+            border-radius: 12px;
+        }
+        .btn-primary {
+            background-color: var(--tg-button);
+            color: var(--tg-button-text);
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
         .btn-primary:hover { opacity: 0.85; }
-        .btn-primary:disabled { background-color: var(--tg-hint); opacity: 0.7; cursor: not-allowed; }
-        .btn-secondary { background-color: var(--tg-secondary-bg); color: var(--tg-text); border: 1px solid var(--tg-hint); }
-        .input-field { background-color: var(--tg-bg); color: var(--tg-text); border: 1px solid var(--tg-hint); border-radius: 8px; }
+        .btn-primary:disabled {
+            background-color: var(--tg-hint);
+            opacity: 0.7;
+            cursor: not-allowed;
+        }
+        .btn-secondary {
+            background-color: var(--tg-secondary-bg);
+            color: var(--tg-text);
+            border: 1px solid var(--tg-hint);
+        }
+        .input-field {
+            background-color: var(--tg-bg);
+            color: var(--tg-text);
+            border: 1px solid var(--tg-hint);
+            border-radius: 8px;
+        }
         .input-field::placeholder { color: var(--tg-hint); }
-        .tab { border-bottom: 3px solid transparent; color: var(--tg-hint); }
-        .tab.active { border-bottom-color: var(--tg-button); color: var(--tg-text); }
-        .loader { border: 4px solid var(--tg-hint); border-top: 4px solid var(--tg-button); border-radius: 50%; width: 24px; height: 24px; animation: spin 1s linear infinite; }
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .tab {
+            border-bottom: 3px solid transparent;
+            color: var(--tg-hint);
+        }
+        .tab.active {
+            border-bottom-color: var(--tg-button);
+            color: var(--tg-text);
+        }
+        .loader {
+            border: 4px solid var(--tg-hint);
+            border-top: 4px solid var(--tg-button);
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
     </style>
 </head>
 <body class="p-4">
+
     <div class="max-w-4xl mx-auto space-y-6">
         <h1 class="text-2xl font-bold text-center">Парсер косметики WB</h1>
 
-        <!-- Вкладки -->
+        <!-- Блок 1: Вкладки выбора режима -->
         <div class="card p-2">
             <div class="flex border-b" style="border-color: var(--tg-hint);">
-                <button id="tab-single" class="tab active w-1/2 py-3 px-4 font-semibold">Поиск по названию</button>
+                <button id="tab-single" class="tab active w-1/2 py-3 px-4 font-semibold">Один товар</button>
                 <button id="tab-mass" class="tab w-1/2 py-3 px-4 font-semibold">Массовый парсинг</button>
             </div>
             
-            <!-- Поиск -->
+            <!-- Форма: Один товар -->
             <div id="panel-single" class="p-4 space-y-4">
-                <p class="text-sm" style="color: var(--tg-hint);">Введите название товара. Ограничение: 10 страниц.</p>
-                <label for="search-query" class="block text-sm font-medium mb-1">Название:</label>
-                <input type="text" id="search-query" class="w-full p-2 input-field" placeholder="Например, увлажняющий крем">
+                <p class="text-sm" style="color: var(--tg-hint);">Введите артикул (SKU) товара для парсинга.</p>
+                <div>
+                    <label for="article" class="block text-sm font-medium mb-1">Артикул:</label>
+                    <input type="text" id="article" class="w-full p-2 input-field" placeholder="Например, 12345678">
+                </div>
                 <button id="parse-single-btn" class="w-full p-3 btn-primary h-12 flex items-center justify-center">
-                    <span>Спарсить товары</span>
+                    <span>Спарсить товар</span>
                 </button>
             </div>
             
-            <!-- Массовый -->
+            <!-- Форма: Массовый парсинг -->
             <div id="panel-mass" class="p-4 space-y-4 hidden">
-                <p class="text-sm" style="color: var(--tg-hint);">Введите ID магазина или ID бренда. Ограничение: 10 страниц.</p>
-                <label for="seller-id" class="block text-sm font-medium mb-1">ID Магазина:</label>
-                <input type="text" id="seller-id" class="w-full p-2 input-field" placeholder="ID продавца">
-                <label for="brand-id" class="block text-sm font-medium mb-1">ID Бренда:</label>
-                <input type="text" id="brand-id" class="w-full p-2 input-field" placeholder="ID бренда">
+                 <p class="text-sm" style="color: var(--tg-hint);">Введите ID магазина или ID бренда. Массовый парсинг может занять время, если товаров много. Параметры товаров не будут загружены для ускорения.</p>
+                <div>
+                    <label for="seller-id" class="block text-sm font-medium mb-1">ID Магазина:</label>
+                    <input type="text" id="seller-id" class="w-full p-2 input-field" placeholder="ID продавца">
+                </div>
+                <div>
+                    <label for="brand-id" class="block text-sm font-medium mb-1">ID Бренда:</label>
+                    <input type="text" id="brand-id" class="w-full p-2 input-field" placeholder="ID бренда">
+                </div>
                 <button id="parse-mass-btn" class="w-full p-3 btn-primary h-12 flex items-center justify-center">
                     <span>Спарсить все товары</span>
                 </button>
             </div>
         </div>
 
-        <!-- Загрузка / Ошибка -->
+        <!-- Спиннер / Ошибка -->
         <div id="loading" class="flex flex-col items-center justify-center hidden">
             <div class="loader"></div>
             <p class="mt-2 text-sm" style="color: var(--tg-hint);">Парсинг... Это займет время.</p>
         </div>
         <div id="error-msg" class="text-sm text-red-400 text-center hidden p-4 card"></div>
 
-        <!-- Результаты -->
+
+        <!-- Блок 2: Результаты парсинга -->
         <div id="results-container" class="space-y-4 hidden">
             <h2 class="text-xl font-semibold text-center">Результаты парсинга</h2>
-            <button id="export-btn" class="w-full p-3 btn-primary btn-secondary">Выгрузить в Excel</button>
+            
+            <!-- Кнопка выгрузки -->
+            <button id="export-btn" class="w-full p-3 btn-primary btn-secondary">
+                Выгрузить в Excel
+            </button>
+
+            <!-- Таблица с данными ("Колонки") -->
             <div class="card p-0 overflow-x-auto">
                 <table class="w-full text-sm text-left">
                     <thead class="text-xs uppercase" style="background-color: var(--tg-bg);">
                         <tr>
-                            <th class="py-3 px-4">Артикул</th>
-                            <th class="py-3 px-4">Название</th>
-                            <th class="py-3 px-4">Бренд</th>
-                            <th class="py-3 px-4">Цена</th>
-                            <th class="py-3 px-4">Рейтинг</th>
-                            <th class="py-3 px-4">Отзывы</th>
-                            <th class="py-3 px-4">Остаток</th>
+                            <th scope="col" class="py-3 px-4">Артикул</th>
+                            <th scope="col" class="py-3 px-4">Название</th>
+                            <th scope="col" class="py-3 px-4">Бренд</th>
+                            <th scope="col" class="py-3 px-4">Цена</th>
+                            <th scope="col" class="py-3 px-4">Рейтинг</th>
+                            <th scope="col" class="py-3 px-4">Отзывы</th>
+                            <th scope="col" class="py-3 px-4">Остаток</th>
                         </tr>
                     </thead>
-                    <tbody id="results-table-body" class="divide-y" style="border-color: var(--tg-bg);"></tbody>
+                    <tbody id="results-table-body" class="divide-y" style="border-color: var(--tg-bg);">
+                        <!-- Данные будут вставлены сюда -->
+                    </tbody>
                 </table>
             </div>
+
+            <!-- Диаграмма -->
             <div class="card p-4">
-                <h3 class="text-lg font-semibold mb-2 text-center">Диаграмма</h3>
-                <canvas id="resultsChart"></canvas>
+                 <h3 class="text-lg font-semibold mb-2 text-center">Диаграмма</h3>
+                 <canvas id="resultsChart"></canvas>
             </div>
         </div>
+
     </div>
 
-    <script src="main.js"></script>
+    <script>
+        // --- Глобальные переменные ---
+        let parsedData = []; // Всегда храним массив продуктов
+        let resultsChartInstance = null;
+        
+        // --- API ЗАПРОСЫ ---
+        
+        // Парсинг 1 товара
+        async function fetchSingleProduct(articleId) {
+            if (!articleId) throw new Error("Артикул не может быть пустым.");
+            
+            const url = `https://card.wb.ru/cards/v2/detail?appType=1&curr=rub&dest=-1257786&nm=${articleId}`;
+            const response = await fetch(url);
+            if (!response.ok) throw new Error('Ошибка сети');
+            const data = await response.json();
+            if (!data.data || !data.data.products || data.data.products.length === 0) throw new Error('Товар не найден');
+            
+            const p = data.data.products[0];
+            const params = {};
+            if (p.options) {
+                p.options.forEach(o => {
+                    params[o.name] = o.value;
+                });
+            }
+            
+            let stock = 0;
+            if (p.sizes) {
+                p.sizes.forEach(s => {
+                    stock += s.qty || 0;
+                });
+            } else if (p.totalQuantity) {
+                stock = p.totalQuantity;
+            }
+            
+            return {
+                id: p.id,
+                name: p.name,
+                brand: p.brand,
+                price: p.salePriceU / 100,
+                rating: p.reviewRating,
+                reviews: p.feedbacks,
+                stock: stock,
+                params: params
+            };
+        }
+
+        // Массовый парсинг
+        async function fetchMassProducts(sellerId, brandId) {
+            if (!sellerId && !brandId) throw new Error("Нужно указать ID Магазина или ID Бренда.");
+            
+            const baseUrl = 'https://catalog.wb.ru/catalog?appType=1&curr=rub&dest=-1257786&sort=popular&spp=30';
+            let query = '';
+            if (sellerId) query += `&supplier=${sellerId}`;
+            if (brandId) query += `&brand=${brandId}`;
+            
+            const allProducts = [];
+            let page = 1;
+            
+            while (true) {
+                const url = `${baseUrl}${query}&page=${page}`;
+                const response = await fetch(url);
+                if (!response.ok) throw new Error('Ошибка сети');
+                const data = await response.json();
+                
+                if (!data.data || !data.data.products || data.data.products.length === 0) break;
+                
+                data.data.products.forEach(p => {
+                    let stock = 0;
+                    if (p.sizes) {
+                        p.sizes.forEach(s => {
+                            if (s.stocks) {
+                                s.stocks.forEach(st => stock += st.qty || 0);
+                            } else {
+                                stock += s.qty || 0;
+                            }
+                        });
+                    }
+                    
+                    allProducts.push({
+                        id: p.id,
+                        name: p.name,
+                        brand: p.brand,
+                        price: p.salePriceU / 100,
+                        rating: p.reviewRating || p.rating || 0,
+                        reviews: p.feedbacks || p.feedbackCount || 0,
+                        stock: stock,
+                        params: {}  // Параметры не загружаются для массового парсинга, чтобы избежать тысяч запросов
+                    });
+                });
+                
+                if (page * 100 >= (data.data.total || allProducts.length)) break;
+                page++;
+                await new Promise(resolve => setTimeout(resolve, 500)); // Задержка для избежания блокировки
+            }
+            
+            return allProducts;
+        }
+        
+        // --- Инициализация приложения ---
+        document.addEventListener('DOMContentLoaded', () => {
+            // Инициализация TWA
+            try {
+                Telegram.WebApp.ready();
+                Telegram.WebApp.expand();
+            } catch (e) { console.error("Ошибка TWA:", e); }
+
+            // Элементы DOM
+            const tabSingle = document.getElementById('tab-single');
+            const tabMass = document.getElementById('tab-mass');
+            const panelSingle = document.getElementById('panel-single');
+            const panelMass = document.getElementById('panel-mass');
+            
+            const parseSingleBtn = document.getElementById('parse-single-btn');
+            const parseMassBtn = document.getElementById('parse-mass-btn');
+            const exportBtn = document.getElementById('export-btn');
+
+            const loadingEl = document.getElementById('loading');
+            const errorEl = document.getElementById('error-msg');
+            const resultsContainer = document.getElementById('results-container');
+            const tableBody = document.getElementById('results-table-body');
+
+            // --- Логика вкладок ---
+            tabSingle.addEventListener('click', () => {
+                tabSingle.classList.add('active');
+                tabMass.classList.remove('active');
+                panelSingle.classList.remove('hidden');
+                panelMass.classList.add('hidden');
+            });
+
+            tabMass.addEventListener('click', () => {
+                tabMass.classList.add('active');
+                tabSingle.classList.remove('active');
+                panelMass.classList.remove('hidden');
+                panelSingle.classList.add('hidden');
+            });
+
+            // --- Логика парсинга ---
+            
+            // Парсинг 1 товара
+            parseSingleBtn.addEventListener('click', async () => {
+                const articleId = document.getElementById('article').value.trim();
+                clearUI();
+                setLoading(true, parseSingleBtn);
+                
+                try {
+                    const data = await fetchSingleProduct(articleId);
+                    parsedData = [data]; // Сохраняем как массив
+                    displayResults(parsedData);
+                    updateChart(parsedData);
+                } catch (error) {
+                    showError(error.message);
+                } finally {
+                    setLoading(false, parseSingleBtn, "Спарсить товар");
+                }
+            });
+
+            // Массовый парсинг
+            parseMassBtn.addEventListener('click', async () => {
+                const sellerId = document.getElementById('seller-id').value.trim();
+                const brandId = document.getElementById('brand-id').value.trim();
+                clearUI();
+                setLoading(true, parseMassBtn);
+                
+                try {
+                    const data = await fetchMassProducts(sellerId, brandId);
+                    parsedData = data; // Сохраняем массив
+                    displayResults(parsedData);
+                    updateChart(parsedData);
+                } catch (error) {
+                    showError(error.message);
+                } finally {
+                    setLoading(false, parseMassBtn, "Спарсить все товары");
+                }
+            });
+            
+            // --- Логика отображения ---
+
+            function displayResults(products) {
+                tableBody.innerHTML = ''; // Очистка
+                if (!products || products.length === 0) {
+                    showError("Ничего не найдено.");
+                    return;
+                }
+                
+                products.forEach(p => {
+                    const tr = document.createElement('tr');
+                    tr.className = "border-b";
+                    tr.style.borderColor = "var(--tg-bg)";
+                    tr.innerHTML = `
+                        <td class="py-3 px-4">${p.id}</td>
+                        <td class="py-3 px-4 font-medium">${p.name}</td>
+                        <td class="py-3 px-4">${p.brand}</td>
+                        <td class="py-3 px-4">${p.price} ₽</td>
+                        <td class="py-3 px-4">${p.rating}</td>
+                        <td class="py-3 px-4">${p.reviews}</td>
+                        <td class="py-3 px-4">${p.stock}</td>
+                    `;
+                    tableBody.appendChild(tr);
+                });
+                
+                resultsContainer.classList.remove('hidden');
+            }
+
+            // --- "Умная" диаграмма ---
+            function updateChart(products) {
+                const ctx = document.getElementById('resultsChart').getContext('2d');
+                if (resultsChartInstance) {
+                    resultsChartInstance.destroy();
+                }
+
+                if (products.length === 1) {
+                    // Диаграмма для 1 товара (Бар)
+                    const p = products[0];
+                    resultsChartInstance = new Chart(ctx, {
+                        type: 'bar',
+                        data: {
+                            labels: ['Цена (₽)', 'Отзывы (шт)', 'Остаток (шт)'],
+                            datasets: [{
+                                label: `Аналитика: ${p.name.substring(0, 20)}...`,
+                                data: [p.price, p.reviews, p.stock],
+                                backgroundColor: ['#5288C1', '#76C7C0', '#F3BA2F'],
+                            }]
+                        },
+                        options: chartOptions()
+                    });
+                } else if (products.length > 1) {
+                    // Диаграмма для >1 товара (Scatter: Цена vs Рейтинг)
+                    const scatterData = products.map(p => ({ x: p.price, y: p.rating }));
+                    
+                    resultsChartInstance = new Chart(ctx, {
+                        type: 'scatter',
+                        data: {
+                            datasets: [{
+                                label: 'Цена vs. Рейтинг',
+                                data: scatterData,
+                                backgroundColor: '#5288C1',
+                            }]
+                        },
+                        options: chartOptions({
+                            x: { title: { display: true, text: 'Цена (₽)', color: 'var(--tg-text)' } },
+                            y: { title: { display: true, text: 'Рейтинг', color: 'var(--tg-text)' } }
+                        })
+                    });
+                }
+            }
+            
+            // Общие настройки для всех диаграмм
+            function chartOptions(scales = {}) {
+                return {
+                    responsive: true,
+                    plugins: { legend: { labels: { color: 'var(--tg-text)' } } },
+                    scales: {
+                        y: { 
+                            beginAtZero: true,
+                            ticks: { color: 'var(--tg-hint)' },
+                            grid: { color: 'var(--tg-secondary-bg)' },
+                            ...scales.y
+                        },
+                        x: { 
+                            ticks: { color: 'var(--tg-hint)' },
+                            grid: { display: false },
+                            ...scales.x
+                        }
+                    }
+                };
+            }
+
+            // --- Экспорт в Excel ---
+            exportBtn.addEventListener('click', () => {
+                if (parsedData.length === 0) return;
+
+                // Собираем все *уникальные* параметры (для косметики) со всех товаров
+                const allParamKeys = new Set();
+                parsedData.forEach(p => {
+                    if (p.params) Object.keys(p.params).forEach(k => allParamKeys.add(k));
+                });
+                const paramKeysArray = Array.from(allParamKeys);
+                
+                // Преобразуем данные в плоский формат
+                const flatData = parsedData.map(p => {
+                    const base = {
+                        "Артикул": p.id,
+                        "Название": p.name,
+                        "Бренд": p.brand,
+                        "Цена": p.price,
+                        "Рейтинг": p.rating,
+                        "Отзывы": p.reviews,
+                        "Остаток": p.stock,
+                    };
+                    
+                    // Добавляем колонки для *каждого* уникального параметра
+                    paramKeysArray.forEach(key => {
+                        base[key] = p.params ? (p.params[key] || "") : "";
+                    });
+                    
+                    return base;
+                });
+                
+                const ws = XLSX.utils.json_to_sheet(flatData);
+                const wb = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(wb, ws, "ParsedProducts");
+                XLSX.writeFile(wb, `wb_export_${Date.now()}.xlsx`);
+            });
+
+            // --- Вспомогательные функции UI ---
+            function setLoading(isLoading, btnElement, btnText = "") {
+                loadingEl.classList.toggle('hidden', !isLoading);
+                loadingEl.classList.toggle('flex', isLoading);
+                if (btnElement) {
+                    btnElement.disabled = isLoading;
+                    if (isLoading) {
+                        btnElement.innerHTML = `<div class="loader"></div>`;
+                    } else {
+                        btnElement.innerHTML = `<span>${btnText}</span>`;
+                    }
+                }
+            }
+            
+            function showError(message) {
+                errorEl.textContent = `Ошибка: ${message}`;
+                errorEl.classList.remove('hidden');
+            }
+            
+            function clearUI() {
+                errorEl.classList.add('hidden');
+                resultsContainer.classList.add('hidden');
+                tableBody.innerHTML = '';
+                parsedData = [];
+                if (resultsChartInstance) resultsChartInstance.destroy();
+            }
+        });
+    </script>
 </body>
 </html>

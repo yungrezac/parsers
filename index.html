@@ -91,19 +91,19 @@
         <!-- Блок 1: Вкладки выбора режима -->
         <div class="card p-2">
             <div class="flex border-b" style="border-color: var(--tg-hint);">
-                <button id="tab-single" class="tab active w-1/2 py-3 px-4 font-semibold">Один товар</button>
+                <button id="tab-single" class="tab active w-1/2 py-3 px-4 font-semibold">Поиск по названию</button>
                 <button id="tab-mass" class="tab w-1/2 py-3 px-4 font-semibold">Массовый парсинг</button>
             </div>
             
-            <!-- Форма: Один товар -->
+            <!-- Форма: Поиск по названию -->
             <div id="panel-single" class="p-4 space-y-4">
-                <p class="text-sm" style="color: var(--tg-hint);">Введите артикул (SKU) товара для парсинга.</p>
+                <p class="text-sm" style="color: var(--tg-hint);">Введите название товара для поиска и парсинга всех найденных товаров.</p>
                 <div>
-                    <label for="article" class="block text-sm font-medium mb-1">Артикул:</label>
-                    <input type="text" id="article" class="w-full p-2 input-field" placeholder="Например, 12345678">
+                    <label for="search-query" class="block text-sm font-medium mb-1">Название:</label>
+                    <input type="text" id="search-query" class="w-full p-2 input-field" placeholder="Например, увлажняющий крем">
                 </div>
                 <button id="parse-single-btn" class="w-full p-3 btn-primary h-12 flex items-center justify-center">
-                    <span>Спарсить товар</span>
+                    <span>Спарсить товары</span>
                 </button>
             </div>
             
@@ -175,64 +175,83 @@
         let parsedData = []; // Всегда храним массив продуктов
         let resultsChartInstance = null;
         
-        // --- API ЗАПРОСЫ ---
-        
-        // Парсинг 1 товара
-        async function fetchSingleProduct(articleId) {
-            if (!articleId) throw new Error("Артикул не может быть пустым.");
-            
-            const url = `https://card.wb.ru/cards/v2/detail?appType=1&curr=rub&dest=-1257786&nm=${articleId}`;
-            const response = await fetch(url);
-            if (!response.ok) throw new Error('Ошибка сети');
-            const data = await response.json();
-            if (!data.data || !data.data.products || data.data.products.length === 0) throw new Error('Товар не найден');
-            
-            const p = data.data.products[0];
-            const params = {};
-            if (p.options) {
-                p.options.forEach(o => {
-                    params[o.name] = o.value;
-                });
+        // --- Вспомогательная функция для fetch с прокси (чтобы обойти CORS) ---
+        async function fetchJson(url) {
+            const proxyUrl = 'https://api.allorigins.win/get?url=' + encodeURIComponent(url);
+            const proxyResponse = await fetch(proxyUrl);
+            if (!proxyResponse.ok) {
+                throw new Error('Ошибка прокси: ' + proxyResponse.status);
             }
-            
-            let stock = 0;
-            if (p.sizes) {
-                p.sizes.forEach(s => {
-                    stock += s.qty || 0;
-                });
-            } else if (p.totalQuantity) {
-                stock = p.totalQuantity;
+            const proxyData = await proxyResponse.json();
+            if (proxyData.status.http_code !== 200) {
+                throw new Error('Ошибка API: ' + proxyData.status.http_code);
             }
-            
-            return {
-                id: p.id,
-                name: p.name,
-                brand: p.brand,
-                price: p.salePriceU / 100,
-                rating: p.reviewRating,
-                reviews: p.feedbacks,
-                stock: stock,
-                params: params
-            };
+            return JSON.parse(proxyData.contents);
         }
-
-        // Массовый парсинг
-        async function fetchMassProducts(sellerId, brandId) {
-            if (!sellerId && !brandId) throw new Error("Нужно указать ID Магазина или ID Бренда.");
-            
-            const baseUrl = 'https://catalog.wb.ru/catalog?appType=1&curr=rub&dest=-1257786&sort=popular&spp=30';
-            let query = '';
-            if (sellerId) query += `&supplier=${sellerId}`;
-            if (brandId) query += `&brand=${brandId}`;
+        
+        // --- Парсинг по поиску (замена одного товара) ---
+        async function fetchSearchProducts(query) {
+            if (!query) throw new Error("Название не может быть пустым.");
             
             const allProducts = [];
             let page = 1;
             
             while (true) {
-                const url = `${baseUrl}${query}&page=${page}`;
-                const response = await fetch(url);
-                if (!response.ok) throw new Error('Ошибка сети');
-                const data = await response.json();
+                const url = `https://search.wb.ru/exactmatch/ru/common/v7/search?appType=1&curr=rub&dest=-1257786&query=${encodeURIComponent(query)}&resultset=catalog&sort=popular&spp=30&suppressSpellcheck=false&page=${page}`;
+                const data = await fetchJson(url);
+                
+                if (!data.data || !data.data.products || data.data.products.length === 0) break;
+                
+                data.data.products.forEach(p => {
+                    let stock = 0;
+                    if (p.sizes) {
+                        p.sizes.forEach(s => {
+                            if (s.stocks) {
+                                s.stocks.forEach(st => stock += st.qty || 0);
+                            } else {
+                                stock += s.qty || 0;
+                            }
+                        });
+                    }
+                    
+                    allProducts.push({
+                        id: p.id,
+                        name: p.name,
+                        brand: p.brand,
+                        price: p.salePriceU / 100,
+                        rating: p.reviewRating || 0,
+                        reviews: p.feedbacks || 0,
+                        stock: stock,
+                        params: {}  // Параметры не загружаются для поиска
+                    });
+                });
+                
+                if (allProducts.length >= (data.data.total || allProducts.length)) break;
+                page++;
+                await new Promise(resolve => setTimeout(resolve, 500)); // Задержка
+            }
+            
+            return allProducts;
+        }
+
+        // --- Массовый парсинг ---
+        async function fetchMassProducts(sellerId, brandId) {
+            if (!sellerId && !brandId) throw new Error("Нужно указать ID Магазина или ID Бренда.");
+            if (sellerId && brandId) throw new Error("Укажите только один: ID Магазина или ID Бренда.");
+            
+            let endpoint = '';
+            if (sellerId) {
+                endpoint = `https://catalog.wb.ru/sellers/v2/catalog?appType=1&curr=rub&dest=-1257786&sort=popular&spp=30&supplier=${sellerId}`;
+            } else if (brandId) {
+                endpoint = `https://catalog.wb.ru/brands/v2/catalog?appType=1&curr=rub&dest=-1257786&sort=popular&spp=30&brand=${brandId}`;
+            }
+            
+            const allProducts = [];
+            let page = 1;
+            
+            while (true) {
+                const url = `${endpoint}&page=${page}`;
+                const data = await fetchJson(url);
                 
                 if (!data.data || !data.data.products || data.data.products.length === 0) break;
                 
@@ -256,13 +275,13 @@
                         rating: p.reviewRating || p.rating || 0,
                         reviews: p.feedbacks || p.feedbackCount || 0,
                         stock: stock,
-                        params: {}  // Параметры не загружаются для массового парсинга, чтобы избежать тысяч запросов
+                        params: {}  // Параметры не загружаются для массового парсинга
                     });
                 });
                 
-                if (page * 100 >= (data.data.total || allProducts.length)) break;
+                if (allProducts.length >= (data.data.total || allProducts.length)) break;
                 page++;
-                await new Promise(resolve => setTimeout(resolve, 500)); // Задержка для избежания блокировки
+                await new Promise(resolve => setTimeout(resolve, 500)); // Задержка
             }
             
             return allProducts;
@@ -308,21 +327,21 @@
 
             // --- Логика парсинга ---
             
-            // Парсинг 1 товара
+            // Парсинг по поиску
             parseSingleBtn.addEventListener('click', async () => {
-                const articleId = document.getElementById('article').value.trim();
+                const query = document.getElementById('search-query').value.trim();
                 clearUI();
                 setLoading(true, parseSingleBtn);
                 
                 try {
-                    const data = await fetchSingleProduct(articleId);
-                    parsedData = [data]; // Сохраняем как массив
+                    const data = await fetchSearchProducts(query);
+                    parsedData = data;
                     displayResults(parsedData);
                     updateChart(parsedData);
                 } catch (error) {
                     showError(error.message);
                 } finally {
-                    setLoading(false, parseSingleBtn, "Спарсить товар");
+                    setLoading(false, parseSingleBtn, "Спарсить товары");
                 }
             });
 
@@ -335,7 +354,7 @@
                 
                 try {
                     const data = await fetchMassProducts(sellerId, brandId);
-                    parsedData = data; // Сохраняем массив
+                    parsedData = data;
                     displayResults(parsedData);
                     updateChart(parsedData);
                 } catch (error) {

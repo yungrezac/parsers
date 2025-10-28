@@ -97,7 +97,7 @@
             
             <!-- Форма: Поиск по названию -->
             <div id="panel-single" class="p-4 space-y-4">
-                <p class="text-sm" style="color: var(--tg-hint);">Введите название товара для поиска и парсинга всех найденных товаров.</p>
+                <p class="text-sm" style="color: var(--tg-hint);">Введите название товара для поиска и парсинга всех найденных товаров. Если товаров много, парсинг может занять время. Ограничиваем 10 страницами для скорости.</p>
                 <div>
                     <label for="search-query" class="block text-sm font-medium mb-1">Название:</label>
                     <input type="text" id="search-query" class="w-full p-2 input-field" placeholder="Например, увлажняющий крем">
@@ -109,7 +109,7 @@
             
             <!-- Форма: Массовый парсинг -->
             <div id="panel-mass" class="p-4 space-y-4 hidden">
-                 <p class="text-sm" style="color: var(--tg-hint);">Введите ID магазина или ID бренда. Массовый парсинг может занять время, если товаров много. Параметры товаров не будут загружены для ускорения.</p>
+                 <p class="text-sm" style="color: var(--tg-hint);">Введите ID магазина или ID бренда. Массовый парсинг может занять время, если товаров много. Параметры товаров не будут загружены для ускорения. Ограничиваем 10 страницами для скорости.</p>
                 <div>
                     <label for="seller-id" class="block text-sm font-medium mb-1">ID Магазина:</label>
                     <input type="text" id="seller-id" class="w-full p-2 input-field" placeholder="ID продавца">
@@ -177,16 +177,12 @@
         
         // --- Вспомогательная функция для fetch с прокси (чтобы обойти CORS) ---
         async function fetchJson(url) {
-            const proxyUrl = 'https://api.allorigins.win/get?url=' + encodeURIComponent(url);
+            const proxyUrl = 'https://corsproxy.io/?' + encodeURIComponent(url);
             const proxyResponse = await fetch(proxyUrl);
             if (!proxyResponse.ok) {
                 throw new Error('Ошибка прокси: ' + proxyResponse.status);
             }
-            const proxyData = await proxyResponse.json();
-            if (proxyData.status.http_code !== 200) {
-                throw new Error('Ошибка API: ' + proxyData.status.http_code);
-            }
-            return JSON.parse(proxyData.contents);
+            return await proxyResponse.json();
         }
         
         // --- Парсинг по поиску (замена одного товара) ---
@@ -195,10 +191,16 @@
             
             const allProducts = [];
             let page = 1;
+            const maxPages = 10; // Ограничение для скорости
             
             while (true) {
-                const url = `https://search.wb.ru/exactmatch/ru/common/v7/search?appType=1&curr=rub&dest=-1257786&query=${encodeURIComponent(query)}&resultset=catalog&sort=popular&spp=30&suppressSpellcheck=false&page=${page}`;
-                const data = await fetchJson(url);
+                const url = `https://search.wb.ru/exactmatch/sng/common/v13/search?ab_testing=false&appType=1&curr=rub&dest=-1257786&query=${encodeURIComponent(query)}&resultset=catalog&sort=popular&spp=30&suppressSpellcheck=false&page=${page}`;
+                let data;
+                try {
+                    data = await fetchJson(url);
+                } catch (e) {
+                    throw new Error('Ошибка сети: ' + e.message);
+                }
                 
                 if (!data.data || !data.data.products || data.data.products.length === 0) break;
                 
@@ -226,7 +228,7 @@
                     });
                 });
                 
-                if (allProducts.length >= (data.data.total || allProducts.length)) break;
+                if (page >= maxPages || allProducts.length >= (data.data.total || allProducts.length)) break;
                 page++;
                 await new Promise(resolve => setTimeout(resolve, 500)); // Задержка
             }
@@ -248,10 +250,16 @@
             
             const allProducts = [];
             let page = 1;
+            const maxPages = 10; // Ограничение для скорости
             
             while (true) {
                 const url = `${endpoint}&page=${page}`;
-                const data = await fetchJson(url);
+                let data;
+                try {
+                    data = await fetchJson(url);
+                } catch (e) {
+                    throw new Error('Ошибка сети: ' + e.message);
+                }
                 
                 if (!data.data || !data.data.products || data.data.products.length === 0) break;
                 
@@ -279,7 +287,7 @@
                     });
                 });
                 
-                if (allProducts.length >= (data.data.total || allProducts.length)) break;
+                if (page >= maxPages || allProducts.length >= (data.data.total || allProducts.length)) break;
                 page++;
                 await new Promise(resolve => setTimeout(resolve, 500)); // Задержка
             }

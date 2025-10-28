@@ -109,7 +109,7 @@
             
             <!-- Форма: Массовый парсинг -->
             <div id="panel-mass" class="p-4 space-y-4 hidden">
-                 <p class="text-sm" style="color: var(--tg-hint);">Введите ID магазина или ID бренда.</p>
+                 <p class="text-sm" style="color: var(--tg-hint);">Введите ID магазина или ID бренда. Массовый парсинг может занять время, если товаров много. Параметры товаров не будут загружены для ускорения.</p>
                 <div>
                     <label for="seller-id" class="block text-sm font-medium mb-1">ID Магазина:</label>
                     <input type="text" id="seller-id" class="w-full p-2 input-field" placeholder="ID продавца">
@@ -125,7 +125,7 @@
         </div>
 
         <!-- Спиннер / Ошибка -->
-        <div id="loading" class="flex-col items-center justify-center hidden">
+        <div id="loading" class="flex flex-col items-center justify-center hidden">
             <div class="loader"></div>
             <p class="mt-2 text-sm" style="color: var(--tg-hint);">Парсинг... Это займет время.</p>
         </div>
@@ -175,55 +175,97 @@
         let parsedData = []; // Всегда храним массив продуктов
         let resultsChartInstance = null;
         
-        // *** ВАЖНО: URL ТВОЕГО БЭКЕНДА ***
-        // Когда у тебя будет бэкенд, замени это на его URL
-        const API_BASE_URL = "https://tvoi-server-dlya-parsera.com"; 
+        // --- API ЗАПРОСЫ ---
         
-        // --- Мок-данные (Симуляция ответа сервера) ---
-        const MOCK_PRODUCT_1 = {
-            id: 12345678, name: "Увлажняющий крем 'Aqua-Boost'", brand: "BeautyNature", price: 1250.00, rating: 4.8, reviews: 1890, stock: 450,
-            params: { "Назначение": "Увлажнение", "Тип кожи": "Сухая", "Объем": "50 мл" }
-        };
-        const MOCK_PRODUCT_2 = {
-            id: 87654321, name: "Сыворотка с Витамином C", brand: "GlowUp", price: 2100.00, rating: 4.9, reviews: 5120, stock: 150,
-            params: { "Назначение": "Сияние", "Актив": "Витамин C", "Объем": "30 мл" }
-        };
-        const MOCK_PRODUCT_3 = {
-            id: 11223344, name: "Маска для лица глиняная", brand: "PureSkin", price: 850.00, rating: 4.6, reviews: 950, stock: 300,
-            params: { "Назначение": "Очищение", "Тип кожи": "Жирная", "Объем": "100 мл" }
-        };
-        const MOCK_MASS_PRODUCTS = [MOCK_PRODUCT_1, MOCK_PRODUCT_2, MOCK_PRODUCT_3];
-
-        // --- СИМУЛЯЦИЯ API ЗАПРОСОВ ---
-        
-        // Симуляция парсинга 1 товара
+        // Парсинг 1 товара
         async function fetchSingleProduct(articleId) {
             if (!articleId) throw new Error("Артикул не может быть пустым.");
             
-            // *** НАСТОЯЩИЙ КОД: ***
-            // const response = await fetch(`${API_BASE_URL}/parse-single?article=${articleId}`);
-            // if (!response.ok) throw new Error('Ошибка сети');
-            // return await response.json();
+            const url = `https://card.wb.ru/cards/v2/detail?appType=1&curr=rub&dest=-1257786&nm=${articleId}`;
+            const response = await fetch(url);
+            if (!response.ok) throw new Error('Ошибка сети');
+            const data = await response.json();
+            if (!data.data || !data.data.products || data.data.products.length === 0) throw new Error('Товар не найден');
             
-            // *** СИМУЛЯЦИЯ: ***
-            return new Promise(resolve => {
-                setTimeout(() => resolve({ ...MOCK_PRODUCT_1, id: articleId }), 1500);
-            });
+            const p = data.data.products[0];
+            const params = {};
+            if (p.options) {
+                p.options.forEach(o => {
+                    params[o.name] = o.value;
+                });
+            }
+            
+            let stock = 0;
+            if (p.sizes) {
+                p.sizes.forEach(s => {
+                    stock += s.qty || 0;
+                });
+            } else if (p.totalQuantity) {
+                stock = p.totalQuantity;
+            }
+            
+            return {
+                id: p.id,
+                name: p.name,
+                brand: p.brand,
+                price: p.salePriceU / 100,
+                rating: p.reviewRating,
+                reviews: p.feedbacks,
+                stock: stock,
+                params: params
+            };
         }
 
-        // Симуляция массового парсинга
+        // Массовый парсинг
         async function fetchMassProducts(sellerId, brandId) {
             if (!sellerId && !brandId) throw new Error("Нужно указать ID Магазина или ID Бренда.");
             
-            // *** НАСТОЯЩИЙ КОД: ***
-            // const response = await fetch(`${API_BASE_URL}/parse-mass?seller=${sellerId}&brand=${brandId}`);
-            // if (!response.ok) throw new Error('Ошибка сети');
-            // return await response.json();
+            const baseUrl = 'https://catalog.wb.ru/catalog?appType=1&curr=rub&dest=-1257786&sort=popular&spp=30';
+            let query = '';
+            if (sellerId) query += `&supplier=${sellerId}`;
+            if (brandId) query += `&brand=${brandId}`;
             
-            // *** СИМУЛЯЦИIA: ***
-            return new Promise(resolve => {
-                setTimeout(() => resolve(MOCK_MASS_PRODUCTS), 3000);
-            });
+            const allProducts = [];
+            let page = 1;
+            
+            while (true) {
+                const url = `${baseUrl}${query}&page=${page}`;
+                const response = await fetch(url);
+                if (!response.ok) throw new Error('Ошибка сети');
+                const data = await response.json();
+                
+                if (!data.data || !data.data.products || data.data.products.length === 0) break;
+                
+                data.data.products.forEach(p => {
+                    let stock = 0;
+                    if (p.sizes) {
+                        p.sizes.forEach(s => {
+                            if (s.stocks) {
+                                s.stocks.forEach(st => stock += st.qty || 0);
+                            } else {
+                                stock += s.qty || 0;
+                            }
+                        });
+                    }
+                    
+                    allProducts.push({
+                        id: p.id,
+                        name: p.name,
+                        brand: p.brand,
+                        price: p.salePriceU / 100,
+                        rating: p.reviewRating || p.rating || 0,
+                        reviews: p.feedbacks || p.feedbackCount || 0,
+                        stock: stock,
+                        params: {}  // Параметры не загружаются для массового парсинга, чтобы избежать тысяч запросов
+                    });
+                });
+                
+                if (page * 100 >= (data.data.total || allProducts.length)) break;
+                page++;
+                await new Promise(resolve => setTimeout(resolve, 500)); // Задержка для избежания блокировки
+            }
+            
+            return allProducts;
         }
         
         // --- Инициализация приложения ---
@@ -268,7 +310,7 @@
             
             // Парсинг 1 товара
             parseSingleBtn.addEventListener('click', async () => {
-                const articleId = document.getElementById('article').value;
+                const articleId = document.getElementById('article').value.trim();
                 clearUI();
                 setLoading(true, parseSingleBtn);
                 
@@ -286,8 +328,8 @@
 
             // Массовый парсинг
             parseMassBtn.addEventListener('click', async () => {
-                const sellerId = document.getElementById('seller-id').value;
-                const brandId = document.getElementById('brand-id').value;
+                const sellerId = document.getElementById('seller-id').value.trim();
+                const brandId = document.getElementById('brand-id').value.trim();
                 clearUI();
                 setLoading(true, parseMassBtn);
                 
@@ -435,6 +477,7 @@
             // --- Вспомогательные функции UI ---
             function setLoading(isLoading, btnElement, btnText = "") {
                 loadingEl.classList.toggle('hidden', !isLoading);
+                loadingEl.classList.toggle('flex', isLoading);
                 if (btnElement) {
                     btnElement.disabled = isLoading;
                     if (isLoading) {
@@ -459,7 +502,5 @@
             }
         });
     </script>
-    <script src="main.js" defer></script>
 </body>
 </html>
-

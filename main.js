@@ -5,7 +5,7 @@ let resultsChartInstance = null;
 
 // --- Вспомогательная функция для fetch с прокси ---
 async function fetchJson(url) {
-    const proxyUrl = 'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(url);
+    const proxyUrl = 'https://corsfix.com/proxy?url=' + encodeURIComponent(url);
     const response = await fetch(proxyUrl);
     if (!response.ok) {
         throw new Error('Ошибка прокси: ' + response.status);

@@ -3,13 +3,12 @@
 let parsedData = []; // Всегда храним массив продуктов
 let resultsChartInstance = null;
 
-// --- Вспомогательная функция для fetch через Netlify proxy ---
+// --- Вспомогательная функция для fetch с прокси ---
 async function fetchJson(url) {
-    // Удаляем 'https://' из url и используем /api/ для прокси
-    const proxyPath = '/api/' + url.replace('https://', '');
-    const response = await fetch(proxyPath);
+    const proxyUrl = 'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(url);
+    const response = await fetch(proxyUrl);
     if (!response.ok) {
-        throw new Error('Ошибка сети: ' + response.status);
+        throw new Error('Ошибка прокси: ' + response.status);
     }
     return await response.json();
 }
